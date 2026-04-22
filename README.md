@@ -230,6 +230,7 @@ odin_chess/
 │   ├── frontend/        # Browser UI unit tests (Jest)
 │   └── integration/     # End-to-end tests (CLI + HTTP)
 ├── saves/               # Game saves written here (YAML)
+├── CHANGELOG.md         # Notable changes per session
 └── docs/
     ├── spec.md          # Functional requirements
     ├── design.md        # Architecture decisions
