@@ -121,28 +121,41 @@ module Chess
       end
 
       def ask_new_or_load
-        saves = list_saves
-        if saves.empty?
-          return Game.new
-        end
+        loop do
+          saves = list_saves
+          return Game.new if saves.empty?
 
-        @output.puts "Saved games:"
-        saves.each_with_index { |s, i| @output.puts "  #{i + 1}. #{File.basename(s)}" }
-        @output.puts "  n. New game"
-        @output.print "Choice [n]: "
-        choice = @input.gets&.chomp&.strip&.downcase || 'n'
+          @output.puts "Saved games:"
+          saves.each_with_index { |s, i| @output.puts "  #{i + 1}. #{File.basename(s)}" }
+          @output.puts "  n. New game"
+          @output.puts "  d<n>. Delete a save (e.g. d1)"
+          @output.print "Choice [n]: "
+          choice = @input.gets&.chomp&.strip&.downcase || 'n'
 
-        if choice == 'n' || choice.empty?
-          Game.new
-        else
-          idx = choice.to_i - 1
-          if idx.between?(0, saves.length - 1)
-            load_save(saves[idx])
+          if choice == 'n' || choice.empty?
+            return Game.new
+          elsif choice =~ /\Ad(\d+)\z/
+            idx = $1.to_i - 1
+            if idx.between?(0, saves.length - 1)
+              do_delete_save(saves[idx])
+            else
+              @output.puts "Invalid choice."
+            end
           else
-            @output.puts "Invalid choice, starting new game."
-            Game.new
+            idx = choice.to_i - 1
+            if idx.between?(0, saves.length - 1)
+              return load_save(saves[idx])
+            else
+              @output.puts "Invalid choice, starting new game."
+              return Game.new
+            end
           end
         end
+      end
+
+      def do_delete_save(path)
+        File.delete(path)
+        @output.puts "Deleted: #{File.basename(path)}"
       end
 
       def load_save(path)

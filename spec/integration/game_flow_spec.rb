@@ -260,6 +260,31 @@ RSpec.describe 'Phase 1 + Phase 2 integration' do
       saves = Dir.glob(File.join(tmp_dir, '*.yml'))
       expect(saves).not_to be_empty
     end
+
+    it 'runner deletes a save file when d1 is entered at the startup menu' do
+      stub_const("Chess::CLI::Runner::SAVES_DIR", tmp_dir)
+
+      # Seed a save file so the startup menu appears
+      game = Chess::Game.new
+      submit(game, 'e2 e4')
+      Chess::Serializer.save(game, File.join(tmp_dir, 'seed_save.yml'))
+      expect(Dir.glob(File.join(tmp_dir, '*.yml')).length).to eq(1)
+
+      # d1 deletes the save; no saves remain so runner starts a new game; quit immediately
+      input  = StringIO.new("d1\nquit\n")
+      output = StringIO.new
+      runner = Chess::CLI::Runner.new(input: input, output: output)
+
+      begin
+        runner.start
+      rescue SystemExit
+        # ok
+      end
+
+      expect(Dir.glob(File.join(tmp_dir, '*.yml'))).to be_empty
+      expect(output.string).to include('Deleted')
+      expect(output.string).to include("White's turn")
+    end
   end
 
   # ------------------------------------------------------------------ #

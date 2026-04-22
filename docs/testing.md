@@ -24,24 +24,24 @@
 |----------|----------|--------|
 | `spec/chess/cli/renderer_spec.rb` | `Chess::CLI::Renderer` | 13 |
 | `spec/chess/cli/input_parser_spec.rb` | `Chess::CLI::InputParser` | 22 |
-| `spec/chess/cli/runner_spec.rb` | `Chess::CLI::Runner` | 9 |
-| **Phase 2 小計** | | **44** |
+| `spec/chess/cli/runner_spec.rb` | `Chess::CLI::Runner` | 13 |
+| **Phase 2 小計** | | **48** |
 
 ### Integration Tests — Phase 1 + Phase 2 端到端測試
 
 | 測試檔案 | 說明 | 案例數 |
 |----------|------|--------|
-| `spec/integration/game_flow_spec.rb` | 完整遊戲流程整合測試 | 15 |
-| **Integration 小計** | | **15** |
+| `spec/integration/game_flow_spec.rb` | 完整遊戲流程整合測試 | 16 |
+| **Integration 小計** | | **16** |
 
 ### 全部合計
 
 | | 案例數 |
 |-|--------|
 | Phase 1 單元測試 | 194 |
-| Phase 2 單元測試 | 44 |
-| Integration 測試 | 15 |
-| **總計** | **253** |
+| Phase 2 單元測試 | 48 |
+| Integration 測試 | 16 |
+| **總計** | **258** |
 
 執行指令：`bundle exec rspec`
 
@@ -494,6 +494,12 @@ en_passant_target = [5,4]（e6）
 #### 投降
 - `"resign"` 顯示 `Black wins`
 
+#### 刪除存檔（啟動選單）
+- 輸入 `d1` 時對應的 `.yml` 檔案從磁碟刪除
+- 顯示 `Deleted: <filename>` 確認訊息
+- 刪除後清單為空時自動開始新遊戲（不再提示選單）
+- `d99`（超出範圍索引）顯示 `Invalid choice` 並重新提示，原檔案不受影響
+
 ---
 
 ## Integration Tests — Phase 1 + Phase 2
@@ -523,9 +529,10 @@ en_passant_target = [5,4]（e6）
 ### 王車易位 — 端到端
 - 輸入 `"e1 g1"` → 找到 `:castle_kingside` 合法移動 → King 到 g1、Rook 到 f1
 
-### 存檔/讀檔 — 端到端
+### 存檔/讀檔/刪除 — 端到端
 - 兩步後 `Serializer.save` + `Serializer.load` → turn、history、棋子位置全部吻合
 - Runner 執行 `save` 指令後在目錄產生 `.yml` 檔案
+- Runner 啟動選單輸入 `d1` → 存檔從磁碟刪除、顯示 `Deleted`、自動進入新遊戲
 
 ### 非法移動防止
 - `legal_moves` 不包含對方棋子的移動

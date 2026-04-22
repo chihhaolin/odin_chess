@@ -104,6 +104,41 @@ RSpec.describe Chess::CLI::Runner do
     end
   end
 
+  describe 'delete save from startup menu' do
+    let(:tmp_dir) { Dir.mktmpdir }
+    after { FileUtils.rm_rf(tmp_dir) }
+
+    before do
+      stub_const("#{described_class}::SAVES_DIR", tmp_dir)
+      FileUtils.touch(File.join(tmp_dir, 'save_test.yml'))
+    end
+
+    it 'deletes the selected save file when d1 is entered' do
+      runner, _output = make_runner("d1\nquit\n")
+      capture_exit { runner.start }
+      expect(Dir.glob(File.join(tmp_dir, '*.yml'))).to be_empty
+    end
+
+    it 'prints a deletion confirmation message' do
+      runner, output = make_runner("d1\nquit\n")
+      capture_exit { runner.start }
+      expect(output.string).to include('Deleted')
+    end
+
+    it 'starts a new game automatically after all saves are deleted' do
+      runner, output = make_runner("d1\nquit\n")
+      capture_exit { runner.start }
+      expect(output.string).to include("White's turn")
+    end
+
+    it 'shows an error and re-prompts for an out-of-range delete index' do
+      runner, output = make_runner("d99\nn\nquit\n")
+      capture_exit { runner.start }
+      expect(output.string).to include('Invalid choice')
+      expect(Dir.glob(File.join(tmp_dir, '*.yml'))).not_to be_empty
+    end
+  end
+
   describe 'promotion prompt' do
     before do
       allow(Dir).to receive(:exist?).and_call_original
