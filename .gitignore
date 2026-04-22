@@ -1,0 +1,15 @@
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+*.tmp
+*.temp
+
+# Ruby
+.bundle/
+vendor/bundle/
+*.gem
+
+# Saves (game data — keep directory, ignore contents)
+saves/*.yml
