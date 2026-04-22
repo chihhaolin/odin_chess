@@ -1,4 +1,4 @@
-# Phase 1 + Phase 2 + Phase 3 — Test 說明文件
+# Phase 1 + Phase 2 + Phase 3 + Phase 4 — Test 說明文件
 
 ## 測試範圍總覽
 
@@ -35,6 +35,15 @@
 | `spec/app/api_spec.rb` | `Chess::API` | 24 |
 | **Phase 3 小計** | | **37** |
 
+### Phase 4 — Frontend 單元測試（Jest）
+
+| 測試檔案 | 說明 | 案例數 |
+|----------|------|--------|
+| `spec/frontend/api.test.js`   | `Api` fetch 封裝單元測試       | 11 |
+| `spec/frontend/board.test.js` | `render()` 純函式 DOM 測試     | 14 |
+| `spec/frontend/app.test.js`   | `App` 狀態機 component 測試   | 21 |
+| **Phase 4 小計** | | **46** |
+
 ### Integration Tests — Phase 1 + Phase 2 + Phase 3 端到端測試
 
 | 測試檔案 | 說明 | 案例數 |
@@ -47,15 +56,16 @@
 
 | | 案例數 |
 |-|--------|
-| Phase 1 單元測試 | 194 |
-| Phase 2 單元測試 | 48 |
-| Phase 3 單元測試 | 37 |
-| Integration 測試（CLI + API） | 19 |
-| **總計** | **277** |
+| Phase 1 單元測試 (RSpec) | 194 |
+| Phase 2 單元測試 (RSpec) | 48 |
+| Phase 3 單元測試 (RSpec) | 37 |
+| Integration 測試 (RSpec) | 19 |
+| Phase 4 前端測試 (Jest)  | 46 |
+| **Ruby 合計** | **277** |
+| **Frontend 合計** | **46** |
 
-> 實際執行數以 `bundle exec rspec` 輸出為準。
-
-執行指令：`bundle exec rspec`
+> Ruby 測試執行：`bundle exec rspec`
+> Frontend 測試執行：`npm run test:frontend`
 
 ---
 
@@ -645,3 +655,105 @@ en_passant_target = [5,4]（e6）
 #### Resign via DELETE
 - `POST /games` → `DELETE /games/:id` → 訊息包含 "White resigns" 和 "Black wins"
 - 刪除後 `GET /games/:id` 回傳 404
+
+---
+
+## Phase 4 — Frontend 測試（Jest + jsdom）
+
+測試框架：**Jest 29**，環境：**jsdom**（模擬瀏覽器 DOM）
+執行指令：`npm run test:frontend`
+
+---
+
+### Api（`spec/frontend/api.test.js`）
+
+#### `createGame`
+- 向 `POST /games` 發送請求
+- 回傳回應資料（含 `game_id`）
+
+#### `makeMove`
+- 向 `POST /games/:id/moves` 發送 from/to body
+- 有 promotion 時加入 `promotion` 欄位
+- 無 promotion 時省略 `promotion` 欄位
+
+#### `resign`
+- 向 `DELETE /games/:id` 發送請求
+
+#### `saveGame`
+- 向 `POST /games/:id/save` 發送請求
+
+#### `listSaves`
+- 向 `GET /games/saved` 發送請求
+
+#### `loadSave`
+- 向 `POST /games/load/:name` 發送請求
+
+#### `deleteSave`
+- 向 `DELETE /games/saved/:name` 發送請求
+
+#### 錯誤處理
+- 非 2xx 回應時拋出帶有 `status` 屬性的錯誤
+
+---
+
+### Board / render（`spec/frontend/board.test.js`）
+
+#### 棋盤結構
+- 建立精確 64 個 `.square` 元素
+- 32 個 light 格、32 個 dark 格
+- a1 為 dark（標準西洋棋底色）
+- b1 為 light
+- h8 為 dark
+
+#### 棋子渲染
+- 白方兵渲染為 `♙`
+- 黑方 King 渲染為 `♚`
+- 白方 Queen 渲染為 `♕`
+- 空格不產生 `.piece` 元素
+
+#### 選取與合法目標
+- 被選取的格子加上 `selected` class
+- 非選取格不加 `selected`
+- 合法目標格加上 `legal-target` class
+- 非目標格不加 `legal-target`
+
+#### Last-move 高亮
+- from 與 to 格加上 `last-move` class
+- `last_move: null` 時不產生任何 `last-move`
+
+#### Check 高亮
+- `status: 'check'` 時，當前玩家的 King 格加上 `in-check` class
+- `status: 'playing'` 時不加 `in-check`
+- 對手方 King 不加 `in-check`
+
+---
+
+### App 狀態機（`spec/frontend/app.test.js`）
+
+#### `start()`
+- 呼叫 `api.createGame()` 一次
+- 建立 64 個格子並渲染棋盤
+- 儲存 `gameId` 與初始 `state`
+- 重置 `moveHistory`
+- 隱藏 game-over modal
+- 更新 status bar 文字
+
+#### 棋子選取（`handleSquareClick`）
+- 點擊己方棋子 → 選取，`uiState: 'piece_selected'`，顯示 `legal-target`
+- 閒置時點擊空格 → 無動作
+- 選取後點擊非目標格 → 取消選取，回到 `idle`
+- 選取後點擊另一己方棋子 → 改選新棋子
+
+#### 移動提交
+- 點擊合法目標格 → 呼叫 `api.makeMove(gameId, from, to, null)`
+- 移動後重置選取，`uiState` 回到 `idle`
+- 移動加入 `moveHistory`（格式 `from→to`）
+- 遊戲結束後點擊不觸發移動
+
+#### 兵的升變
+- 白方兵到達 rank 8（或黑方到 rank 1）→ 顯示 promotion modal，`uiState: 'awaiting_promotion'`
+- 選擇升變棋子後呼叫 `api.makeMove(gameId, from, to, piece)`，隱藏 modal
+
+#### 遊戲結束
+- `status: 'checkmate'` → 顯示 game-over modal，文字為結局訊息
+- `status: 'stalemate'` → 顯示 game-over modal

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess</title>
+  <link rel="stylesheet" href="css/board.css">
+</head>
+<body>
+
+  <header>
+    <h1>Chess</h1>
+    <div class="controls">
+      <button id="save-btn">Save</button>
+      <button id="resign-btn">Resign</button>
+      <button id="new-game-btn">New Game</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="board-wrapper">
+      <div class="file-labels">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+      <div class="board-row">
+        <div class="rank-labels">
+          <span>8</span><span>7</span><span>6</span><span>5</span>
+          <span>4</span><span>3</span><span>2</span><span>1</span>
+        </div>
+        <div id="board"></div>
+        <div class="rank-labels">
+          <span>8</span><span>7</span><span>6</span><span>5</span>
+          <span>4</span><span>3</span><span>2</span><span>1</span>
+        </div>
+      </div>
+      <div class="file-labels">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+    </div>
+
+    <aside>
+      <div id="status-bar"></div>
+      <ol id="history"></ol>
+    </aside>
+  </main>
+
+  <!-- Promotion picker -->
+  <div id="promotion-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <p>Promote pawn to:</p>
+      <div class="promo-btns">
+        <button data-piece="queen">♕ Queen</button>
+        <button data-piece="rook">♖ Rook</button>
+        <button data-piece="bishop">♗ Bishop</button>
+        <button data-piece="knight">♘ Knight</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="game-over-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <p id="game-over-msg"></p>
+      <button id="new-game-modal-btn">New Game</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { App } from './js/app.js';
+
+    const app = new App({
+      boardEl:       document.getElementById('board'),
+      statusEl:      document.getElementById('status-bar'),
+      historyEl:     document.getElementById('history'),
+      promotionModal: document.getElementById('promotion-modal'),
+      promotionBtns:  document.querySelectorAll('#promotion-modal [data-piece]'),
+      gameOverModal:  document.getElementById('game-over-modal'),
+      gameOverMsg:    document.getElementById('game-over-msg'),
+      newGameBtn:     document.getElementById('new-game-btn'),
+      saveBtn:        document.getElementById('save-btn'),
+      resignBtn:      document.getElementById('resign-btn'),
+    });
+
+    document.getElementById('new-game-modal-btn').addEventListener('click', () => {
+      app.start();
+    });
+
+    app.start();
+  </script>
+
+</body>
+</html>

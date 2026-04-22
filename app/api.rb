@@ -9,11 +9,27 @@ module Chess
     SAVES_DIR = File.expand_path('../../saves', __dir__)
 
     configure do
-      set :store,     GameStore.new
-      set :saves_dir, SAVES_DIR
+      set :store,         GameStore.new
+      set :saves_dir,     SAVES_DIR
+      set :public_folder, File.expand_path('../frontend', __dir__)
+      enable :static
     end
 
-    before { content_type :json }
+    before do
+      content_type :json
+      response.headers['Access-Control-Allow-Origin']  = '*'
+      response.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
+      response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    end
+
+    options '/*' do
+      200
+    end
+
+    get '/' do
+      content_type :html
+      send_file File.join(settings.public_folder, 'index.html')
+    end
 
     # ------------------------------------------------------------------ #
     # Games                                                               #

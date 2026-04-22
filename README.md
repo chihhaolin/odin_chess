@@ -22,15 +22,17 @@ Final capstone project for [The Odin Project — Ruby course](https://www.theodi
 - Check, checkmate, and stalemate detection
 - Illegal-move prevention — moves that leave your own king in check are rejected
 - ANSI-colour board with Unicode pieces, last-move highlight, and check highlight
+- Browser UI — clickable board, promotion picker, move history, game-over modal
 - Save / load / delete games (YAML, stored in `saves/`)
 - Resign command
 - REST API (Sinatra) with full OpenAPI spec (`docs/openapi.yml`)
-- 277 RSpec examples covering every layer of the stack
+- 277 RSpec + 46 Jest examples covering every layer of the stack
 
 ## Requirements
 
 - Ruby ≥ 3.0
 - Bundler
+- Node.js ≥ 18 (frontend tests only)
 
 ## Setup
 
@@ -38,6 +40,7 @@ Final capstone project for [The Odin Project — Ruby course](https://www.theodi
 git clone <repo-url>
 cd odin_chess
 bundle install
+npm install     # only needed to run frontend tests
 ```
 
 ## Play (CLI)
@@ -69,10 +72,18 @@ If you move a pawn to the back rank without a promotion suffix, you will be prom
 | `n` / Enter | Start new game |
 | `d1`–`dn` | Delete save number n |
 
+## Browser UI
+
+```bash
+bundle exec rackup -s webrick -q   # starts server at http://localhost:9292
+```
+
+Open `http://localhost:9292` to play in the browser. Click a piece to select it — legal target squares are highlighted. Click a target to move. Pawn promotion shows a picker; castling and en passant are handled automatically.
+
 ## REST API
 
 ```bash
-rackup          # starts server at http://localhost:9292
+bundle exec rackup -s webrick -q   # same server, API at http://localhost:9292
 ```
 
 Full endpoint reference: [`docs/openapi.yml`](docs/openapi.yml)
@@ -108,10 +119,12 @@ The move type (castling, en passant) is inferred automatically — you never nee
 ## Running Tests
 
 ```bash
-bundle exec rspec                                          # all 277 examples
+bundle exec rspec                                          # all 277 Ruby examples
 bundle exec rspec spec/chess/move_validator_spec.rb        # single file
 bundle exec rspec spec/chess/pieces/pawn_spec.rb:45        # single example
 bundle exec rspec --format documentation                   # verbose output
+
+npm run test:frontend                                      # all 46 JS examples (Jest)
 ```
 
 ## Architecture
@@ -140,7 +153,15 @@ lib/chess/
 
 app/
 ├── game_store.rb        # In-memory UUID→Game store with 30-min TTL eviction
-└── api.rb               # Sinatra REST API
+└── api.rb               # Sinatra REST API + static file serving
+
+frontend/
+├── index.html           # Page shell — wires App with DOM elements
+├── css/board.css        # Board layout, square colours, highlight styles
+└── js/
+    ├── api.js           # fetch wrappers for all REST endpoints
+    ├── board.js         # render(containerEl, state, …) → pure DOM rebuild
+    └── app.js           # App class: idle → piece_selected → awaiting_promotion
 ```
 
 ### Data flow — CLI
@@ -162,6 +183,17 @@ POST /games/:id/moves  { from: "e2", to: "e4" }
   → API#build_state     → serialises board + legal_moves → JSON response
 ```
 
+### Data flow — Browser UI
+
+```
+User clicks a square
+  → App#handleSquareClick   → updates selectedSquare / uiState
+  → board.js#render         → rebuilds DOM, adds CSS classes
+  → (on legal target click)
+  → Api#makeMove            → POST /games/:id/moves
+  → App#_refresh            → re-renders board with new state
+```
+
 ### Coordinate system
 
 All positions are `[rank, file]` (both 0-indexed):
@@ -181,15 +213,21 @@ All positions are `[rank, file]` (both 0-indexed):
 odin_chess/
 ├── bin/chess            # CLI executable entry point
 ├── config.ru            # Rack entry point (rackup)
+├── package.json         # JS dev dependencies (Jest)
 ├── lib/
 │   ├── chess.rb         # Requires all engine files
 │   └── chess/           # Engine + CLI adapter (see above)
 ├── app/                 # Web API adapter
+├── frontend/            # Browser UI (served by Sinatra)
+│   ├── index.html
+│   ├── css/board.css
+│   └── js/              # api.js, board.js, app.js
 ├── spec/
-│   ├── chess/           # Engine + CLI unit tests
+│   ├── chess/           # Engine + CLI unit tests (RSpec)
 │   │   ├── pieces/
 │   │   └── cli/
-│   ├── app/             # Web API unit tests
+│   ├── app/             # Web API unit tests (RSpec)
+│   ├── frontend/        # Browser UI unit tests (Jest)
 │   └── integration/     # End-to-end tests (CLI + HTTP)
 ├── saves/               # Game saves written here (YAML)
 └── docs/

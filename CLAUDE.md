@@ -5,13 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-bundle install          # install dependencies
-bundle exec rspec       # run all tests (277 examples)
+bundle install          # install Ruby dependencies
+bundle exec rspec       # run all Ruby tests (277 examples)
 bundle exec rspec spec/chess/move_validator_spec.rb          # run a single spec file
 bundle exec rspec spec/chess/pieces/pawn_spec.rb:45          # run a single example by line
 bundle exec rspec --format documentation                     # verbose output (default via .rspec)
 
-rackup                  # start Web API at http://localhost:9292
+bundle exec rackup -s webrick -q   # start Web API + frontend at http://localhost:9292
+
+npm install             # install JS dev dependencies (Jest)
+npm run test:frontend   # run frontend unit tests (46 examples, Jest + jsdom)
 ```
 
 ## Architecture
@@ -19,12 +22,19 @@ rackup                  # start Web API at http://localhost:9292
 This is a pure-Ruby chess engine with two adapter layers on top. The single most important design rule: **chess logic lives in `lib/chess/`, with zero I/O**. CLI and Web API are both thin adapters that call `Game#make_move` and read `Game#legal_moves`.
 
 ```
-lib/chess/        ← engine (no I/O)
-lib/chess/cli/    ← CLI adapter (Renderer, InputParser, Runner)
-app/              ← Web API adapter (GameStore, API)
-spec/chess/       ← engine unit tests
-spec/app/         ← Web API unit tests
-spec/integration/ ← end-to-end tests (CLI + HTTP)
+lib/chess/          ← engine (no I/O)
+lib/chess/cli/      ← CLI adapter (Renderer, InputParser, Runner)
+app/                ← Web API adapter (GameStore, API)
+frontend/           ← browser UI (Vanilla JS, served by Sinatra)
+  js/api.js         ← fetch wrappers for all REST endpoints
+  js/board.js       ← pure render(containerEl, state, …) → DOM
+  js/app.js         ← App class: state machine + event wiring
+  css/board.css     ← board layout and highlight styles
+  index.html        ← page shell, wires App with DOM elements
+spec/chess/         ← engine unit tests (RSpec)
+spec/app/           ← Web API unit tests (RSpec)
+spec/integration/   ← end-to-end tests CLI + HTTP (RSpec)
+spec/frontend/      ← frontend unit tests (Jest + jsdom)
 ```
 
 ### Coordinate system
@@ -50,11 +60,21 @@ All positions are `[rank, file]` (both 0-indexed):
 
 **`GameStore`** (`app/game_store.rb`) — in-memory store keyed by UUID. `create` → new game, `load(game)` → inject existing game (used after deserialisation). Evicts sessions idle for more than 30 minutes on the next `get` call.
 
-**`API`** (`app/api.rb`) — `Sinatra::Base` subclass. Uses `settings.store` (a `GameStore`) and `settings.saves_dir` (path string) so both can be overridden in tests with `Chess::API.set`. Move submission matches the client's `from`/`to`/`promotion` against `game.legal_moves` — the caller never needs to specify the move type (castling, en passant, etc.).
+**`API`** (`app/api.rb`) — `Sinatra::Base` subclass. Uses `settings.store` (a `GameStore`) and `settings.saves_dir` (path string) so both can be overridden in tests with `Chess::API.set`. Move submission matches the client's `from`/`to`/`promotion` against `game.legal_moves` — the caller never needs to specify the move type (castling, en passant, etc.). Also serves `frontend/` as static files and adds CORS headers for cross-origin development.
+
+**`frontend/js/api.js`** — `Api` object with one method per REST endpoint, all using relative URLs (`''` base). Injected into `App` as a dependency so tests can swap it for a mock without module-level mocking.
+
+**`frontend/js/board.js`** — Exports a single pure function `render(containerEl, state, selectedSq, legalTargets)` that rebuilds the 64-square DOM grid from scratch on every call. Applies `selected`, `legal-target`, `last-move`, and `in-check` CSS classes. Holds no state.
+
+**`frontend/js/app.js`** — Exports `App` class. Constructor takes a bag of DOM element references and an optional `api` argument (defaults to `Api`). Implements the `idle → piece_selected → awaiting_promotion → idle` state machine. `handleSquareClick(sq)` returns a Promise when it triggers an async operation, making it directly awaitable in tests.
 
 ### spec_helper load path
 
 `spec/spec_helper.rb` adds **both** `lib/` and the project root to `$LOAD_PATH`, so specs can `require 'chess'` and `require 'app/api'` without relative paths.
+
+### Frontend test setup
+
+Frontend tests live in `spec/frontend/` and run with Jest 29 + jsdom. The `package.json` at the project root sets `"type": "module"` and uses `--experimental-vm-modules` to support ES module imports. Jest globals (`jest`, `describe`, `it`, `expect`, …) must be imported explicitly from `@jest/globals` in each test file.
 
 ### Data flow for a move
 

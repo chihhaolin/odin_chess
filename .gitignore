@@ -13,3 +13,9 @@ vendor/bundle/
 
 # Saves (game data — keep directory, ignore contents)
 saves/*.yml
+
+# Node.js
+node_modules/
+dist/
+build/
+.npm
