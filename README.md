@@ -1,6 +1,6 @@
 # Chess
 
-A two-player chess engine for the terminal, written in pure Ruby.  
+A two-player chess engine written in pure Ruby, with a terminal CLI and a REST API.  
 Final capstone project for [The Odin Project — Ruby course](https://www.theodinproject.com/lessons/ruby-chess).
 
 ```
@@ -9,7 +9,7 @@ Final capstone project for [The Odin Project — Ruby course](https://www.theodi
 7 ♟  ♟  ♟  ♟  ♟  ♟  ♟  ♟  7
 6                            6
 5                            5
-4                            6
+4                            4
 3                            3
 2 ♙  ♙  ♙  ♙  ♙  ♙  ♙  ♙  2
 1 ♖  ♘  ♗  ♕  ♔  ♗  ♘  ♖  1
@@ -22,9 +22,10 @@ Final capstone project for [The Odin Project — Ruby course](https://www.theodi
 - Check, checkmate, and stalemate detection
 - Illegal-move prevention — moves that leave your own king in check are rejected
 - ANSI-colour board with Unicode pieces, last-move highlight, and check highlight
-- Save / load games (YAML, stored in `saves/`)
+- Save / load / delete games (YAML, stored in `saves/`)
 - Resign command
-- 232 RSpec examples covering every layer of the stack
+- REST API (Sinatra) with full OpenAPI spec (`docs/openapi.yml`)
+- 277 RSpec examples covering every layer of the stack
 
 ## Requirements
 
@@ -39,15 +40,15 @@ cd odin_chess
 bundle install
 ```
 
-## Play
+## Play (CLI)
 
 ```bash
 ruby bin/chess
 ```
 
-On startup, if saved games exist you will be asked whether to load one or start fresh.
+On startup, if saved games exist you will be asked whether to load one, start fresh, or delete a save.
 
-### Input format
+### CLI input format
 
 | Input | Action |
 |-------|--------|
@@ -60,10 +61,54 @@ On startup, if saved games exist you will be asked whether to load one or start 
 
 If you move a pawn to the back rank without a promotion suffix, you will be prompted to choose a piece.
 
+### Startup menu
+
+| Input | Action |
+|-------|--------|
+| `1`–`n` | Load save number n |
+| `n` / Enter | Start new game |
+| `d1`–`dn` | Delete save number n |
+
+## REST API
+
+```bash
+rackup          # starts server at http://localhost:9292
+```
+
+Full endpoint reference: [`docs/openapi.yml`](docs/openapi.yml)
+
+### Quick reference
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/games` | Create a new game → `{ game_id, state }` |
+| `GET` | `/games/:id` | Get current board state |
+| `POST` | `/games/:id/moves` | Submit a move |
+| `POST` | `/games/:id/save` | Save game to file |
+| `DELETE` | `/games/:id` | Resign |
+| `GET` | `/games/saved` | List save files |
+| `POST` | `/games/load/:save_name` | Load from save → new `game_id` |
+| `DELETE` | `/games/saved/:save_name` | Delete a save file |
+
+**Submit a move:**
+
+```bash
+curl -X POST http://localhost:9292/games/<id>/moves \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"e2","to":"e4"}'
+
+# Pawn promotion
+curl -X POST http://localhost:9292/games/<id>/moves \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"e7","to":"e8","promotion":"queen"}'
+```
+
+The move type (castling, en passant) is inferred automatically — you never need to specify it.
+
 ## Running Tests
 
 ```bash
-bundle exec rspec                                          # all 232 examples
+bundle exec rspec                                          # all 277 examples
 bundle exec rspec spec/chess/move_validator_spec.rb        # single file
 bundle exec rspec spec/chess/pieces/pawn_spec.rb:45        # single example
 bundle exec rspec --format documentation                   # verbose output
@@ -71,7 +116,7 @@ bundle exec rspec --format documentation                   # verbose output
 
 ## Architecture
 
-Chess logic lives entirely in `lib/chess/` with zero I/O. The CLI in `lib/chess/cli/` is a thin adapter on top — it handles rendering and user input but contains no chess rules.
+Chess logic lives entirely in `lib/chess/` with zero I/O. The CLI and Web API are independent adapters on top — both call only `Game#make_move` and `Game#legal_moves`.
 
 ```
 lib/chess/
@@ -92,9 +137,13 @@ lib/chess/
     ├── renderer.rb      # ANSI board rendering
     ├── input_parser.rb  # "e2 e4" / "e7 e8q" / commands → structured result
     └── runner.rb        # Game loop — glues renderer, parser, and Game together
+
+app/
+├── game_store.rb        # In-memory UUID→Game store with 30-min TTL eviction
+└── api.rb               # Sinatra REST API
 ```
 
-### Data flow for a move
+### Data flow — CLI
 
 ```
 User types "e2 e4"
@@ -102,6 +151,15 @@ User types "e2 e4"
   → Runner#do_move          → finds legal Move from Game#legal_moves
   → Game#make_move          → MoveValidator validates + applies, status updated
   → Runner#print_board      → Renderer#render → ANSI string to stdout
+```
+
+### Data flow — API
+
+```
+POST /games/:id/moves  { from: "e2", to: "e4" }
+  → API#post            → matches from/to against Game#legal_moves
+  → Game#make_move      → MoveValidator validates + applies, status updated
+  → API#build_state     → serialises board + legal_moves → JSON response
 ```
 
 ### Coordinate system
@@ -121,18 +179,22 @@ All positions are `[rank, file]` (both 0-indexed):
 
 ```
 odin_chess/
-├── bin/chess            # Executable entry point
+├── bin/chess            # CLI executable entry point
+├── config.ru            # Rack entry point (rackup)
 ├── lib/
 │   ├── chess.rb         # Requires all engine files
 │   └── chess/           # Engine + CLI adapter (see above)
+├── app/                 # Web API adapter
 ├── spec/
-│   ├── chess/           # Unit tests — engine and CLI
+│   ├── chess/           # Engine + CLI unit tests
 │   │   ├── pieces/
 │   │   └── cli/
-│   └── integration/     # End-to-end tests (input → engine → renderer)
+│   ├── app/             # Web API unit tests
+│   └── integration/     # End-to-end tests (CLI + HTTP)
 ├── saves/               # Game saves written here (YAML)
 └── docs/
     ├── spec.md          # Functional requirements
     ├── design.md        # Architecture decisions
-    └── testing.md       # Test catalogue
+    ├── testing.md       # Test catalogue
+    └── openapi.yml      # OpenAPI 3.0 API specification
 ```

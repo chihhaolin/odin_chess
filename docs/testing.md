@@ -1,4 +1,4 @@
-# Phase 1 + Phase 2 — Test 說明文件
+# Phase 1 + Phase 2 + Phase 3 — Test 說明文件
 
 ## 測試範圍總覽
 
@@ -27,12 +27,21 @@
 | `spec/chess/cli/runner_spec.rb` | `Chess::CLI::Runner` | 13 |
 | **Phase 2 小計** | | **48** |
 
-### Integration Tests — Phase 1 + Phase 2 端到端測試
+### Phase 3 — Web API 單元測試
+
+| 測試檔案 | 測試類別 | 案例數 |
+|----------|----------|--------|
+| `spec/app/game_store_spec.rb` | `Chess::GameStore` | 13 |
+| `spec/app/api_spec.rb` | `Chess::API` | 24 |
+| **Phase 3 小計** | | **37** |
+
+### Integration Tests — Phase 1 + Phase 2 + Phase 3 端到端測試
 
 | 測試檔案 | 說明 | 案例數 |
 |----------|------|--------|
-| `spec/integration/game_flow_spec.rb` | 完整遊戲流程整合測試 | 16 |
-| **Integration 小計** | | **16** |
+| `spec/integration/game_flow_spec.rb` | CLI 遊戲流程整合測試 | 16 |
+| `spec/integration/api_flow_spec.rb`  | HTTP API 整合測試     | 3  |
+| **Integration 小計** | | **19** |
 
 ### 全部合計
 
@@ -40,8 +49,11 @@
 |-|--------|
 | Phase 1 單元測試 | 194 |
 | Phase 2 單元測試 | 48 |
-| Integration 測試 | 16 |
-| **總計** | **258** |
+| Phase 3 單元測試 | 37 |
+| Integration 測試（CLI + API） | 19 |
+| **總計** | **277** |
+
+> 實際執行數以 `bundle exec rspec` 輸出為準。
 
 執行指令：`bundle exec rspec`
 
@@ -502,7 +514,84 @@ en_passant_target = [5,4]（e6）
 
 ---
 
-## Integration Tests — Phase 1 + Phase 2
+## Phase 3 — Web API 測試
+
+### GameStore（`spec/app/game_store_spec.rb`）
+
+#### `#create`
+- 回傳 UUID 格式字串
+- 初始化新的 `Chess::Game`
+- `size` 遞增
+
+#### `#get`
+- 以已知 id 回傳 Game
+- 未知 id 回傳 `nil`
+- 更新 last-accessed 時間戳記
+
+#### `#load`
+- 注入已有 Game，回傳新 UUID
+- 回傳的 id 可正常讀取該 Game
+
+#### `#delete`
+- 從 store 移除 Game
+- `size` 遞減
+
+#### `#size`
+- 回傳目前儲存的 Game 數量
+
+#### TTL 淘汰
+- 超過 TTL 的 Game 在下次 `get` 時被移除
+- 近期存取的 Game 不受影響
+
+---
+
+### API（`spec/app/api_spec.rb`）
+
+#### `POST /games`
+- 回傳 201
+- 回應包含 `game_id`
+- `state` 包含 `board`、`turn`、`status`、`legal_moves`
+
+#### `GET /games/saved`
+- 回傳 200 與 `saves` 陣列
+- 列出目錄中現有的 `.yml` 檔案
+
+#### `GET /games/:id`
+- 有效 id 回傳 200 與 `state`
+- 未知 id 回傳 404
+
+#### `POST /games/:id/moves`
+- 合法移動回傳 200，`state.turn` 切換
+- 非法移動回傳 422
+- 缺少 `from`/`to` 回傳 400
+- 格子格式錯誤（如 `z9`）回傳 400
+- 未知 game id 回傳 404
+- 升變但未附 `promotion` 欄位 → 422，錯誤訊息說明需指定棋子
+- 升變附 `promotion: "queen"` → 200，`board` 中目標格為 Queen
+
+#### `POST /games/:id/save`
+- 在 `saves_dir` 產生 `.yml` 檔案
+- 回應包含 `saved` 檔名
+
+#### `POST /games/load/:save_name`
+- 回傳 201，包含 `game_id` 與 `state`
+- 未知 save_name 回傳 404
+- 讀取後棋盤狀態與存檔一致
+
+#### `DELETE /games/saved/:save_name`
+- 回傳 200，檔案從磁碟刪除
+- 未知 save_name 回傳 404
+
+#### `DELETE /games/:id`
+- 回傳 200，回應包含投降訊息
+- 刪除後 `GET /games/:id` 回傳 404
+- 未知 id 回傳 404
+
+---
+
+## Integration Tests — Phase 1 + Phase 2 + Phase 3
+
+### CLI 整合（`spec/integration/game_flow_spec.rb`）
 
 **測試檔案：** `spec/integration/game_flow_spec.rb`
 
@@ -541,3 +630,18 @@ en_passant_target = [5,4]（e6）
 
 ### Renderer 反映引擎狀態
 - 吃子後的 last_move 高亮出現在輸出中
+
+---
+
+### API 整合（`spec/integration/api_flow_spec.rb`）
+
+#### Scholar's Mate via HTTP
+- `POST /games` → 連續 7 次 `POST /games/:id/moves` → 最後回應 `state.status: "checkmate"`
+
+#### Save → Load Round-Trip
+- 建立遊戲、走兩步 → `POST /games/:id/save` → `POST /games/load/:save_name`
+- 讀取後棋子位置（e4、e5）與輪次（white）完全一致
+
+#### Resign via DELETE
+- `POST /games` → `DELETE /games/:id` → 訊息包含 "White resigns" 和 "Black wins"
+- 刪除後 `GET /games/:id` 回傳 404

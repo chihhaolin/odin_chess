@@ -1,0 +1,430 @@
+openapi: 3.0.3
+
+info:
+  title: Chess API
+  description: |
+    REST API for the Odin Chess engine.
+    All chess logic lives in the engine (`lib/chess/`); the API is a thin adapter.
+    A "game" is identified by a UUID (`game_id`) returned on creation.
+    Save files are stored as YAML in the `saves/` directory.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:9292
+    description: Local development (rackup)
+
+tags:
+  - name: games
+    description: Live game sessions
+  - name: saves
+    description: Persistent save files
+
+paths:
+
+  # ------------------------------------------------------------------ #
+  # Game lifecycle                                                       #
+  # ------------------------------------------------------------------ #
+
+  /games:
+    post:
+      tags: [games]
+      summary: Create a new game
+      description: Initialises a fresh board and returns the session id.
+      responses:
+        '201':
+          description: Game created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [game_id, state]
+                properties:
+                  game_id:
+                    $ref: '#/components/schemas/GameId'
+                  state:
+                    $ref: '#/components/schemas/GameState'
+              example:
+                game_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                state:
+                  turn: white
+                  status: playing
+                  message: "White's turn."
+                  last_move: null
+                  legal_moves:
+                    e2: [e3, e4]
+                    d2: [d3, d4]
+                  board:
+                    e2: {type: pawn, color: white}
+                    e7: {type: pawn, color: black}
+
+  /games/saved:
+    get:
+      tags: [saves]
+      summary: List saved games
+      description: Returns the filenames of all `.yml` save files in the `saves/` directory.
+      responses:
+        '200':
+          description: List of save filenames
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [saves]
+                properties:
+                  saves:
+                    type: array
+                    items:
+                      type: string
+              example:
+                saves:
+                  - save_20260422_120000_a1b2c3d4.yml
+                  - save_20260422_130000_e5f6a7b8.yml
+
+  /games/load/{save_name}:
+    post:
+      tags: [saves]
+      summary: Load a saved game
+      description: |
+        Deserialises a save file into a new live session.
+        Returns a new `game_id` — the original save file is not deleted.
+      parameters:
+        - $ref: '#/components/parameters/SaveName'
+      responses:
+        '201':
+          description: Save loaded into a new session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [game_id, state]
+                properties:
+                  game_id:
+                    $ref: '#/components/schemas/GameId'
+                  state:
+                    $ref: '#/components/schemas/GameState'
+        '404':
+          $ref: '#/components/responses/SaveNotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /games/{id}:
+    get:
+      tags: [games]
+      summary: Get game state
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Current board state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state]
+                properties:
+                  state:
+                    $ref: '#/components/schemas/GameState'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+    delete:
+      tags: [games]
+      summary: Resign (end game)
+      description: |
+        The current player forfeits. The game session is removed from memory.
+        The opponent is declared the winner.
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Resignation confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    example: "White resigns. Black wins!"
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /games/{id}/moves:
+    post:
+      tags: [games]
+      summary: Submit a move
+      description: |
+        The move is matched against the engine's legal-move list.
+        For promotion moves, `promotion` is required.
+        The move type (castling, en passant) is inferred automatically — callers
+        do **not** need to specify it.
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRequest'
+            examples:
+              normal:
+                summary: Normal move
+                value: {from: "e2", to: "e4"}
+              castle:
+                summary: Kingside castling (type inferred)
+                value: {from: "e1", to: "g1"}
+              promotion:
+                summary: Pawn promotion
+                value: {from: "e7", to: "e8", promotion: "queen"}
+      responses:
+        '200':
+          description: Move accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, state, message]
+                properties:
+                  status:
+                    $ref: '#/components/schemas/GameStatus'
+                  state:
+                    $ref: '#/components/schemas/GameState'
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+        '422':
+          description: Illegal move or promotion piece required
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, state]
+                properties:
+                  error:
+                    type: string
+                  state:
+                    $ref: '#/components/schemas/GameState'
+
+  /games/{id}/save:
+    post:
+      tags: [saves]
+      summary: Save current game to file
+      description: |
+        Serialises the game to a timestamped YAML file in `saves/`.
+        The live session remains active.
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [saved]
+                properties:
+                  saved:
+                    type: string
+                    description: Filename of the created save
+                    example: save_20260422_120000_a1b2c3d4.yml
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /games/saved/{save_name}:
+    delete:
+      tags: [saves]
+      summary: Delete a save file
+      parameters:
+        - $ref: '#/components/parameters/SaveName'
+      responses:
+        '200':
+          description: Save deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: string
+                    example: save_20260422_120000_a1b2c3d4.yml
+        '404':
+          $ref: '#/components/responses/SaveNotFound'
+
+# ------------------------------------------------------------------ #
+# Reusable components                                                  #
+# ------------------------------------------------------------------ #
+
+components:
+
+  parameters:
+    GameId:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GameId'
+
+    SaveName:
+      name: save_name
+      in: path
+      required: true
+      description: Filename of the save (e.g. `save_20260422_120000_a1b2c3d4.yml`)
+      schema:
+        type: string
+
+  schemas:
+    GameId:
+      type: string
+      format: uuid
+      description: UUID that identifies a live game session
+      example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+    GameStatus:
+      type: string
+      enum: [playing, check, checkmate, stalemate]
+      description: Current game status
+
+    Square:
+      type: string
+      pattern: '^[a-h][1-8]$'
+      description: Algebraic chess square (file a–h, rank 1–8)
+      example: e4
+
+    PieceType:
+      type: string
+      enum: [king, queen, rook, bishop, knight, pawn]
+
+    PieceColor:
+      type: string
+      enum: [white, black]
+
+    PromotionPiece:
+      type: string
+      enum: [queen, rook, bishop, knight]
+
+    Piece:
+      type: object
+      required: [type, color]
+      properties:
+        type:
+          $ref: '#/components/schemas/PieceType'
+        color:
+          $ref: '#/components/schemas/PieceColor'
+
+    Board:
+      type: object
+      description: |
+        Map of all 64 squares (a1–h8).
+        Value is a Piece object when occupied, or `null` when empty.
+      additionalProperties:
+        nullable: true
+        oneOf:
+          - $ref: '#/components/schemas/Piece'
+          - type: 'null'
+      example:
+        e1: {type: king, color: white}
+        e2: {type: pawn, color: white}
+        e7: null
+
+    LegalMoves:
+      type: object
+      description: |
+        Map of source squares → array of reachable target squares.
+        Only squares with at least one legal move are included.
+        Promotion moves from one source may have the same target square
+        listed once (the caller adds `promotion` to disambiguate).
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/Square'
+      example:
+        e2: [e3, e4]
+        g1: [f3, h3]
+
+    LastMove:
+      nullable: true
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          $ref: '#/components/schemas/Square'
+        to:
+          $ref: '#/components/schemas/Square'
+
+    GameState:
+      type: object
+      required: [board, turn, status, legal_moves, last_move, message]
+      properties:
+        board:
+          $ref: '#/components/schemas/Board'
+        turn:
+          $ref: '#/components/schemas/PieceColor'
+        status:
+          $ref: '#/components/schemas/GameStatus'
+        legal_moves:
+          $ref: '#/components/schemas/LegalMoves'
+        last_move:
+          $ref: '#/components/schemas/LastMove'
+        message:
+          type: string
+          description: Human-readable status message
+          example: "White's turn."
+
+    MoveRequest:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          $ref: '#/components/schemas/Square'
+        to:
+          $ref: '#/components/schemas/Square'
+        promotion:
+          $ref: '#/components/schemas/PromotionPiece'
+          description: Required when moving a pawn to the back rank
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    GameNotFound:
+      description: Game session not found (expired or invalid id)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Game not found
+
+    SaveNotFound:
+      description: Save file not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Save not found
+
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Missing from/to
+
+    UnprocessableEntity:
+      description: Request is valid JSON but semantically incorrect
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -6,15 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bundle install          # install dependencies
-bundle exec rspec       # run all tests
+bundle exec rspec       # run all tests (277 examples)
 bundle exec rspec spec/chess/move_validator_spec.rb          # run a single spec file
 bundle exec rspec spec/chess/pieces/pawn_spec.rb:45          # run a single example by line
 bundle exec rspec --format documentation                     # verbose output (default via .rspec)
+
+rackup                  # start Web API at http://localhost:9292
 ```
 
 ## Architecture
 
-This is a pure-Ruby CLI chess engine. The single most important design rule: **chess logic lives in `lib/chess/`, with zero I/O**. CLI and future Web API are adapters on top.
+This is a pure-Ruby chess engine with two adapter layers on top. The single most important design rule: **chess logic lives in `lib/chess/`, with zero I/O**. CLI and Web API are both thin adapters that call `Game#make_move` and read `Game#legal_moves`.
+
+```
+lib/chess/        ← engine (no I/O)
+lib/chess/cli/    ← CLI adapter (Renderer, InputParser, Runner)
+app/              ← Web API adapter (GameStore, API)
+spec/chess/       ← engine unit tests
+spec/app/         ← Web API unit tests
+spec/integration/ ← end-to-end tests (CLI + HTTP)
+```
 
 ### Coordinate system
 
@@ -36,6 +47,14 @@ All positions are `[rank, file]` (both 0-indexed):
 **`Game`** — turn loop and status machine. `make_move(move)` is the single public entry point for both CLI and Web API. It validates the move against `legal_moves`, delegates to `MoveValidator#apply_move!`, switches turns, and recomputes status (`:playing | :check | :checkmate | :stalemate`).
 
 **`Serializer`** — converts `Game` to a plain Ruby hash (all-string keys, symbols serialized as strings) and writes YAML. On load, reconstructs every object from the hash. Avoids Marshal to prevent version-coupling.
+
+**`GameStore`** (`app/game_store.rb`) — in-memory store keyed by UUID. `create` → new game, `load(game)` → inject existing game (used after deserialisation). Evicts sessions idle for more than 30 minutes on the next `get` call.
+
+**`API`** (`app/api.rb`) — `Sinatra::Base` subclass. Uses `settings.store` (a `GameStore`) and `settings.saves_dir` (path string) so both can be overridden in tests with `Chess::API.set`. Move submission matches the client's `from`/`to`/`promotion` against `game.legal_moves` — the caller never needs to specify the move type (castling, en passant, etc.).
+
+### spec_helper load path
+
+`spec/spec_helper.rb` adds **both** `lib/` and the project root to `$LOAD_PATH`, so specs can `require 'chess'` and `require 'app/api'` without relative paths.
 
 ### Data flow for a move
 

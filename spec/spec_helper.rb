@@ -1,4 +1,5 @@
 $LOAD_PATH.unshift File.join(__dir__, '..', 'lib')
+$LOAD_PATH.unshift File.join(__dir__, '..')
 require 'chess'
 
 RSpec.configure do |config|
